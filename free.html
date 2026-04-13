@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Support | Ludo Empire</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-storage-compat.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap');
+        body { background: #020617; color: white; font-family: 'Rajdhani', sans-serif; overflow: hidden; }
+        .chat-container { height: calc(100vh - 160px); overflow-y: auto; scroll-behavior: smooth; }
+        .user-msg { : linear-gradient(135deg, #fcd34d 0%, #b45309 100%); color: black; border-radius: 20px 20px 0 20px; }
+        .admin-msg { background: #1e293b; color: white; border-radius: 20px 20px 20px 0; }
+        .media-content { max-width: 200px; border-radius: 12px; margin-top: 5px; border: 2px solid rgba(255,255,255,0.1); }
+        .glass-input { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px); border-top: 1px solid rgba(255,255,255,0.05); }
+        #loading-bar { display: none; height: 2px; background: #fbbf24; position: fixed; top: 0; left: 0; transition: width 0.3s; }
+    </style>
+</head>
+<body>
+    <div id="loading-bar"></div>
+    
+    <header class="p-4 border-b border-white/5 flex items-center justify-between bg-slate-950/80 backdrop-blur-md">
+        <div class="flex items-center gap-3">
+            <button onclick="history.back()"><i class="fas fa-chevron-left"></i></button>
+            <div class="w-10 h-10 rounded-2xl gold-gradient flex items-center justify-center text-black font-black">S</div>
+            <div>
+                <h2 class="font-black text-xs uppercase tracking-tighter">Live Support</h2>
+                <p class="text-[9px] text-green-500 font-bold uppercase animate-pulse">Online Now</p>
+            </div>
+        </div>
+        <i class="fas fa-shield-alt text-yellow-500/50"></i>
+    </header>
+
+    <div id="chat-box" class="chat-container p-5 space-y-6"></div>
+
+    <div class="fixed bottom-0 left-0 right-0 p-4 glass-input">
+        <div class="flex items-center gap-2">
+            <input type="file" id="media-input" class="hidden" accept="image/*,video/*" onchange="uploadMedia(this.files[0])">
+            
+            <button onclick="document.getElementById('media-input').click()" class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400">
+                <i class="fas fa-paperclip"></i>
+            </button>
+
+            <input id="msg-input" type="text" placeholder="Type message..." class="flex-1 bg-black/50 border border-white/5 rounded-full px-5 py-3 text-sm outline-none focus:border-yellow-500/50">
+            
+            <button id="mic-btn" onmousedown="startRecording()" onmouseup="stopRecording()" class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-red-500 active:bg-red-500 active:text-white transition-all">
+                <i class="fas fa-microphone"></i>
+            </button>
+
+            <button onclick="sendMessage()" class="w-12 h-12 rounded-full gold-gradient text-black flex items-center justify-center shadow-lg">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDx4Op4Z93ut30pIfnmSqW8EB4yrb772XA",
+            databaseURL: "https://tiger-8249f-default-rtdb.firebaseio.com",
+            projectId: "tiger-8249f",
+            storageBucket: "tiger-8249f.appspot.com"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const auth = firebase.auth();
+        const storage = firebase.storage();
+
+        let currentUser = null;
+        let mediaRecorder;
+        let audioChunks = [];
+
+        auth.onAuthStateChanged(user => {
+            if(user) { currentUser = user; loadMessages(); }
+            else { location.href = 'user.html'; }
+        });
+
+        function loadMessages() {
+            db.ref('chats/' + currentUser.uid).on('value', s => {
+                const box = document.getElementById('chat-box');
+                box.innerHTML = "";
+                s.forEach(child => {
+                    const m = child.val();
+                    const isUser = m.sender === 'user';
+                    let content = m.text ? `<p>${m.text}</p>` : '';
+                    
+                    if(m.type === 'image') content = `<img src="${m.url}" class="media-content">`;
+                    if(m.type === 'video') content = `<video src="${m.url}" controls class="media-content"></video>`;
+                    if(m.type === 'audio') content = `<audio src="${m.url}" controls class="w-48 mt-2"></audio>`;
+
+                    box.innerHTML += `
+                        <div class="flex ${isUser ? 'justify-end' : 'justify-start'} animate-up">
+                            <div class="p-3 font-bold text-[11px] ${isUser ? 'user-msg' : 'admin-msg'} shadow-xl">
+                                ${content}
+                                <span class="block text-[8px] opacity-50 mt-1 text-right">${new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                            </div>
+                        </div>`;
+                });
+                box.scrollTop = box.scrollHeight;
+            });
+        }
+
+        async function uploadMedia(file) {
+            if(!file) return;
+            const type = file.type.split('/')[0];
+            const ref = storage.ref(`support/${currentUser.uid}/${Date.now()}_${file.name}`);
+            
+            document.getElementById('loading-bar').style.display = 'block';
+            const task = ref.put(file);
+            task.on('state_changed', s => {
+                document.getElementById('loading-bar').style.width = (s.bytesTransferred / s.totalBytes * 100) + '%';
+            }, null, async () => {
+                const url = await ref.getDownloadURL();
+                saveMessage({ type, url, sender: 'user' });
+                document.getElementById('loading-bar').style.display = 'none';
+            });
+        }
+
+        function saveMessage(data) {
+            const finalData = { ...data, timestamp: Date.now(), userEmail: currentUser.email };
+            db.ref('chats/' + currentUser.uid).push(finalData);
+            db.ref('support_list/' + currentUser.uid).set({
+                lastMsg: data.text || `Sent a ${data.type}`,
+                email: currentUser.email,
+                uid: currentUser.uid,
+                timestamp: Date.now()
+            });
+        }
+
+        function sendMessage() {
+            const text = document.getElementById('msg-input').value;
+            if(!text) return;
+            saveMessage({ text, type: 'text', sender: 'user' });
+            document.getElementById('msg-input').value = "";
+        }
+
+        // Voice Recording Logic
+        async function startRecording() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = async () => {
+                const blob = new Blob(audioChunks, { type: 'audio/mp3' });
+                uploadMedia(new File([blob], "voice.mp3", { type: 'audio/mp3' }));
+                audioChunks = [];
+            };
+            mediaRecorder.start();
+        }
+        function stopRecording() { if(mediaRecorder) mediaRecorder.stop(); }
+    </script>
+</body>
+</html>
